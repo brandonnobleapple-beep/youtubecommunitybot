@@ -55,8 +55,21 @@ client.once("ready", () => {
 
     console.info(`Monitoring ${channelIds.length} YouTube channel(s).`);
 
+    // Optional one-time startup test. Set TEST_MODE=true in Render to send a test message.
+    // Turn it back off after the test so restarts do not create repeated test messages.
+    if (process.env.TEST_MODE === "true") {
+        const testEmbed = new EmbedBuilder()
+            .setTitle("YouTube Community Bot — Test")
+            .setDescription("✅ Test successful! The bot can send YouTube Community notifications to this Discord channel.")
+            .addFields({ name: "Status", value: "Monitoring is active." });
+        channel.send({ embeds: [testEmbed] })
+            .then(() => console.info("Test notification sent successfully."))
+            .catch((error) => console.error("Could not send test notification:", error));
+    }
+
     callAllChannels();
-    setInterval(callAllChannels, 3600000);
+    // Check every 5 minutes so new Community posts are detected sooner than the old 1-hour interval.
+    setInterval(callAllChannels, 300000);
 
     async function callAllChannels() {
         for (const [index, channelId] of channelIds.entries()) {
@@ -67,6 +80,7 @@ client.once("ready", () => {
 
     async function callAPI(channelId, channelName) {
         try {
+            console.info(`[${channelName}] Checking for Community posts...`);
             const response = await axios.get(apiUrl, {
                 headers: { "x-api-key": apiKey },
                 params: { channelId }
