@@ -31,7 +31,6 @@ client.once("ready", () => {
     }
 
     const apiKey = process.env.YT_API_KEY;
-    const channelId = process.env.YT_CHANNEL_ID;
     const apiUrl = "https://api.scrapecreators.com/v1/youtube/channel/community-posts";
 
     if (!apiKey) {
@@ -39,15 +38,34 @@ client.once("ready", () => {
         return;
     }
 
-    if (!channelId) {
-        console.error("YT_CHANNEL_ID is missing.");
+    // Use YT_CHANNEL_IDS for multiple channels. The existing YT_CHANNEL_ID is kept as a fallback.
+    const channelIds = (process.env.YT_CHANNEL_IDS || process.env.YT_CHANNEL_ID || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+
+    if (channelIds.length === 0) {
+        console.error("No YouTube channel IDs configured. Add YT_CHANNEL_IDS to Render Environment Variables.");
         return;
     }
 
-    callAPI();
-    setInterval(callAPI, 3600000);
+    const channelNames = (process.env.YT_CHANNEL_NAMES || "")
+        .split(",")
+        .map((name) => name.trim());
 
-    async function callAPI() {
+    console.info(`Monitoring ${channelIds.length} YouTube channel(s).`);
+
+    callAllChannels();
+    setInterval(callAllChannels, 3600000);
+
+    async function callAllChannels() {
+        for (const [index, channelId] of channelIds.entries()) {
+            const channelName = channelNames[index] || `YouTube Channel ${index + 1}`;
+            await callAPI(channelId, channelName);
+        }
+    }
+
+    async function callAPI(channelId, channelName) {
         try {
             const response = await axios.get(apiUrl, {
                 headers: { "x-api-key": apiKey },
@@ -58,7 +76,7 @@ client.once("ready", () => {
             const communityPosts = payload?.items || payload?.posts || payload?.communityPosts || [];
 
             if (!Array.isArray(communityPosts) || communityPosts.length === 0) {
-                console.info("No community posts were returned.");
+                console.info(`[${channelName}] No community posts were returned.`);
                 return;
             }
 
@@ -67,56 +85,50 @@ client.once("ready", () => {
                 .filter((post) => post && post.id);
 
             if (normalizedPosts.length === 0) {
-                console.info("The API returned no usable community posts.");
+                console.info(`[${channelName}] The API returned no usable community posts.`);
                 return;
             }
 
             const newPostID = normalizedPosts[0].id;
+            const lastPostIDs = readLastPostIDs();
+            const lastPostID = lastPostIDs[channelId];
 
-            fs.readFile("./lastPostID.json", "utf8", (err, lastPostIDText) => {
-                if (err) {
-                    console.error("File read failed:", err);
-                    return;
-                }
+            console.info(`[${channelName}] Previous post: ${lastPostID || "none"}`);
+            console.info(`[${channelName}] Latest post: ${newPostID}`);
 
-                let lastPostID;
-                try {
-                    lastPostID = JSON.parse(lastPostIDText);
-                } catch (parseError) {
-                    console.error("Could not parse lastPostID.json:", parseError);
-                    return;
-                }
+            if (lastPostID === newPostID) {
+                console.info(`[${channelName}] No new posts.`);
+                return;
+            }
 
-                console.info(`ID of previous post is: ${lastPostID}`);
-                console.info(`ID of latest post is: ${newPostID}`);
+            if (!lastPostID) {
+                console.info(`[${channelName}] First run. Saving the latest post without sending old posts.`);
+                lastPostIDs[channelId] = newPostID;
+                writeLastPostIDs(lastPostIDs);
+                return;
+            }
 
-                if (lastPostID === newPostID) {
-                    console.info("No new posts");
-                    return;
-                }
+            const previousIndex = normalizedPosts.findIndex((post) => post.id === lastPostID);
 
-                const previousIndex = normalizedPosts.findIndex((post) => post.id === lastPostID);
+            if (previousIndex === -1) {
+                console.info(`[${channelName}] Previous post was not found. Sending the latest post only.`);
+                postContent([normalizedPosts[0]], newPostID, channelName, channelId);
+                return;
+            }
 
-                if (previousIndex === -1) {
-                    console.info("Previous post was not found in the returned page. Sending the latest post only to avoid a flood.");
-                    postContent([normalizedPosts[0]], newPostID);
-                    return;
-                }
-
-                const newPosts = normalizedPosts.slice(0, previousIndex);
-                postContent(newPosts, newPostID);
-            });
+            const newPosts = normalizedPosts.slice(0, previousIndex);
+            postContent(newPosts, newPostID, channelName, channelId);
         } catch (error) {
             const status = error.response?.status;
             const apiMessage = error.response?.data;
-            console.error("YouTube community-posts API request failed:", status || error.message);
+            console.error(`[${channelName}] YouTube API request failed:`, status || error.message);
             if (apiMessage) {
                 console.error("API response:", JSON.stringify(apiMessage));
             }
         }
     }
 
-    function postContent(newPosts, newPostID) {
+    function postContent(newPosts, newPostID, channelName, channelId) {
         newPosts.forEach((post) => {
             const postText = post.content || post.text || post.contentText?.[0]?.text || "New YouTube Community post";
             const postLink = post.url || `https://www.youtube.com/post/${post.id}`;
@@ -125,7 +137,7 @@ client.once("ready", () => {
 
             if (imageURL) {
                 const imgEmbed = new EmbedBuilder()
-                    .setTitle("New YT Image")
+                    .setTitle(`New YT Image — ${channelName}`)
                     .setDescription(`**Description:** ${postText}\n**Post Link:** ${postLink}`)
                     .setImage(imageURL);
                 channel.send({ embeds: [imgEmbed] }).catch(console.error);
@@ -140,21 +152,38 @@ client.once("ready", () => {
                     .join("\n");
                 const totalVotes = post.poll.totalVotes ?? post.poll.voteCount ?? "Unknown";
                 const pollEmbed = new EmbedBuilder()
-                    .setTitle("New YT Poll")
+                    .setTitle(`New YT Poll — ${channelName}`)
                     .setDescription(`**Poll Title:** ${postText}\n**Choices:**\n${choiceArray || "(choices unavailable)"}\n**Total Votes:** ${totalVotes}\n**Poll Link:** ${postLink}`);
                 channel.send({ embeds: [pollEmbed] }).catch(console.error);
                 return;
             }
 
             const textEmbed = new EmbedBuilder()
-                .setTitle("New YT Post")
+                .setTitle(`New YT Post — ${channelName}`)
                 .setDescription(`**Post Text:** ${postText}\n**Post Link:** ${postLink}`);
             channel.send({ embeds: [textEmbed] }).catch(console.error);
         });
 
-        fs.writeFile("lastPostID.json", JSON.stringify(newPostID), function (err) {
-            if (err) console.info(err);
-            else console.info("ID written");
+        const lastPostIDs = readLastPostIDs();
+        lastPostIDs[channelId] = newPostID;
+        writeLastPostIDs(lastPostIDs);
+    }
+
+    function readLastPostIDs() {
+        try {
+            if (!fs.existsSync("./lastPostIDs.json")) {
+                return {};
+            }
+            return JSON.parse(fs.readFileSync("./lastPostIDs.json", "utf8"));
+        } catch (error) {
+            console.error("Could not read lastPostIDs.json:", error);
+            return {};
+        }
+    }
+
+    function writeLastPostIDs(lastPostIDs) {
+        fs.writeFile("./lastPostIDs.json", JSON.stringify(lastPostIDs, null, 2), (err) => {
+            if (err) console.error("Could not save lastPostIDs.json:", err);
         });
     }
 });
