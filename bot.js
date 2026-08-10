@@ -32,7 +32,7 @@ client.once("ready", () => {
 
     const apiKey = process.env.YT_API_KEY;
     const channelId = process.env.YT_CHANNEL_ID;
-    const apiUrl = process.env.YT_API_URL || "https://api.scrapecreators.com/v1/youtube/channel/community-posts";
+    const apiUrl = "https://api.scrapecreators.com/v1/youtube/channel/community-posts";
 
     if (!apiKey) {
         console.error("YT_API_KEY is missing. Add your YouTube community-posts API key to Render Environment Variables.");
