@@ -16,7 +16,7 @@ http.createServer((req, res) => {
 });
 
 client.once("ready", () => {
-    console.info(Ready! Logged in as ${client.user.tag} (${client.user.id}));
+    console.info(`Ready! Logged in as ${client.user.tag} (${client.user.id})`);
 
     const guild = client.guilds.cache.get(process.env.SERVER_ID);
     if (!guild) {
