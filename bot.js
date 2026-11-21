@@ -20,7 +20,6 @@ client.once("ready", () => {
 
     const guild = client.guilds.cache.get(process.env.SERVER_ID);
 
-    const guild = client.guilds.cache.get(process.env.SERVER_ID);
     if (!guild) {
         console.error("Discord server not found. Check SERVER_ID and bot access to the server.");
         return;
