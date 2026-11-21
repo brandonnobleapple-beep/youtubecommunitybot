@@ -69,8 +69,8 @@ client.once("ready", () => {
     }
 
     callAllChannels();
-    // Check every 5 minutes so new Community posts are detected sooner than the old 1-hour interval.
-    setInterval(callAllChannels, 300000);
+// Check continuously, every 10 seconds.
+    setInterval(callAllChannels, 10000);
 
     async function callAllChannels() {
         for (const [index, channelId] of channelIds.entries()) {
