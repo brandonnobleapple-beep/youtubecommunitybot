@@ -70,7 +70,7 @@ client.once("ready", () => {
 
     callAllChannels();
 // Check continuously, every 10 seconds.
-    setInterval(callAllChannels, 10000);
+    setInterval(callAllChannels, 300000);
 
     async function callAllChannels() {
         for (const [index, channelId] of channelIds.entries()) {
